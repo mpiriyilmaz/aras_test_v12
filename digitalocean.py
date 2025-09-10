@@ -429,7 +429,7 @@ if __name__ == "__main__":
         db_adi="arasomtest",
         db_kullanici_adi="postgres",
         db_sifre="oms123456",
-        django_proje_adi="aras",
+        django_proje_adi="core",
     )
     print(sa.tam_skript())
     sa.kaydet("sunucu_ayarlari.sh", "full")

@@ -14,16 +14,37 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-from django.conf import settings
-from django.conf.urls.static import static
+
 from django.contrib import admin
 from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
+from django.views.generic.base import RedirectView  # <-- EKLE
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('', include('account.urls')),  # kendi app’in urls.py’sini dahil edebilirsin
+    path("admin/", admin.site.urls),
+
+    # /index/ -> tablo1duzeltme:ozet (vendor/yıl default)
+    # login olduğun zaman yönlendirilecek sayfa belirliyoruz 
+    # account/views.py/ def login_request(request): fonksiyonundan yönlendiriyoruz
+    path(
+        "index/",
+        RedirectView.as_view(
+            pattern_name="tablo1duzeltme:ozet",
+            permanent=False
+        ),
+        {"vendor": "inavitas", "year": 2022},   # <-- default hedef
+        name="index",
+    ),
+
+    # Login & logout (account.urls içinde name="login" mevcut)
+    path("", include("account.urls")),
+
+    # Diğer app’ler
+    path("rapor/", include(("rapor.urls", "rapor"), namespace="rapor")),
+    path("tablo1duzeltme/", include(("tablo1duzeltme.urls", "tablo1duzeltme"), namespace="tablo1duzeltme")),
 ]
 
-if settings.DEBUG:  # sadece development için
+if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

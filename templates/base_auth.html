@@ -1,0 +1,37 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>{% block title %}Giriş | ARAS{% endblock %}</title>
+
+    <!-- base:css -->
+    <link rel="stylesheet" href="{% static 'vendors/typicons.font/font/typicons.css' %}">
+    <link rel="stylesheet" href="{% static 'vendors/css/vendor.bundle.base.css' %}">
+    <!-- theme -->
+    <link rel="stylesheet" href="{% static 'css/vertical-layout-light/style.css' %}">
+    {% block extracss %}{% endblock %}
+    <link rel="shortcut icon" href="{% static 'images/favicon.png' %}" />
+  </head>
+
+  <body>
+    <div class="container-scroller">
+      <div class="container-fluid page-body-wrapper full-page-wrapper">
+        <div class="content-wrapper d-flex align-items-center auth px-0">
+          {% block auth_content %}{% endblock %}
+        </div>
+      </div>
+    </div>
+
+    <!-- base:js -->
+    <script src="{% static 'vendors/js/vendor.bundle.base.js' %}"></script>
+    <script src="{% static 'js/off-canvas.js' %}"></script>
+    <script src="{% static 'js/hoverable-collapse.js' %}"></script>
+    <script src="{% static 'js/template.js' %}"></script>
+    <script src="{% static 'js/settings.js' %}"></script>
+    <script src="{% static 'js/todolist.js' %}"></script>
+    {% block js_files %}{% endblock %}
+  </body>
+</html>
+
