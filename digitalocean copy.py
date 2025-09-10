@@ -415,21 +415,14 @@ class SunucuAyar:
     # 7.5) DB reset + superuser (YIKICI İŞLEM: TÜM VERİ SİLİNİR)
     # Test aşamasında eski veritabanını silip yeniden oluşturmak gerekebiliyor 
     # canlı ortamda yaparsan tüm db silinir
-    # 7.5) DB reset + superuser (YIKICI: TÜM VERİ SİLİNİR; DB_RESET=1 ise çalışır)
     def veritabani_sifirla_ve_superuser(self, include_shebang: bool = False) -> str:
         shebang = "#!/usr/bin/env bash\n" if include_shebang else ""
         return shebang + dedent(
             f"""\
-        # Opsiyonel güvenlik: DB_RESET=1 değilse atla
-        if [ "${{DB_RESET:-0}}" != "1" ]; then
-          echo "[SKIP] DB reset atlandı (DB_RESET=1 değil)."
-          exit 0
-        fi
-
         set -euo pipefail
         echo "[WARN] Veritabanı SIFIRLANACAK: {self.db_adi}"
 
-        # DB kullanıcısı garanti
+        # DB kullanıcısını garanti altına al
         sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname = '{self.db_kullanici_adi}'" | grep -q 1 \
           || sudo -u postgres psql -c "CREATE USER {self.db_kullanici_adi} WITH PASSWORD '{self.db_sifre}';"
         sudo -u postgres psql -c "ALTER USER {self.db_kullanici_adi} WITH PASSWORD '{self.db_sifre}';"
@@ -441,13 +434,16 @@ class SunucuAyar:
         # Django migrate + superuser
         cd /opt/{self.github_repo_adi}
         source .venv/bin/activate
+
+        # migrate
         python manage.py migrate --noinput
 
-        # .env'deki DJANGO_ADMIN_* değerlerini ortam değişkenine taşı ve superuser oluştur
+        # .env'yi oku, DJANGO_ADMIN_* değerlerini ortam değişkenine yükle ve superuser hazırla
         python - <<'PY'
         import os, django, pathlib
         os.environ.setdefault('DJANGO_SETTINGS_MODULE', '{self.django_proje_adi}.settings')
 
+        # .env dosyasındaki anahtarları ortama yükle (varsa)
         env_file = pathlib.Path('/opt/{self.github_repo_adi}/.env')
         if env_file.exists():
             for line in env_file.read_text(encoding='utf-8', errors='ignore').splitlines():
@@ -474,26 +470,16 @@ class SunucuAyar:
         u.email = email
         u.set_password(password)
         u.save()
-        print(f"[OK] Superuser: {{username}} (şifre .env veya varsayılan)")
+        print(f"[OK] Superuser hazır: {{username}} / (şifre .env veya varsayılan)")
         PY
 
+        # Statik dosyalar + servis
         python manage.py collectstatic --noinput || true
         systemctl reload gunicorn_v1 || systemctl restart gunicorn_v1
 
         echo "[OK] DB reset + superuser tamam."
         """
         )
-    
-
-    def tam_skript_reset(self, include_shebang: bool = True) -> str:
-        shebang = "#!/usr/bin/env bash\n" if include_shebang else ""
-        # full akışın başında DB_RESET=1 export edip geri kalan akışı çalıştırıyoruz
-        return shebang + dedent(
-            """\
-        export DB_RESET=1
-        """
-        ) + self.tam_skript(False)
-
 
 
 
@@ -525,6 +511,8 @@ class SunucuAyar:
             self.deploy_senaryosu(False),          # 13
             f"\n# {self.cizgi} DB RESET + SUPERUSER (opsiyonel: DB_RESET=1) {self.cizgi}\n",
             self.veritabani_sifirla_ve_superuser(False),  # 7.5
+
+
         ]
         return "".join(parts)
 

@@ -261,3 +261,102 @@ systemctl is-active gunicorn_v1 || true
 ss -ltnp | grep ':80' || true
 ls -l /run/gunicorn_v1/gunicorn.sock || true
 curl -I http://127.0.0.1 || true
+
+# ---------------------------------------- Deploy script ----------------------------------------
+# Repo köküne bir deploy.sh bırak
+cat > /opt/aras_test_v12/deploy.sh <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_DIR="/opt/aras_test_v12"
+BRANCH="${1:-$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)}"
+
+echo "[INFO] Deploy başlıyor: $REPO_DIR (branch: $BRANCH)"
+git -C "$REPO_DIR" fetch --all --prune
+# Tercihen reset --hard; olmazsa ff-only pull
+git -C "$REPO_DIR" reset --hard "origin/$BRANCH" || git -C "$REPO_DIR" pull --ff-only origin "$BRANCH"
+
+# Sanal ortam + bağımlılıklar (varsa)
+source "$REPO_DIR/.venv/bin/activate"
+[ -f "$REPO_DIR/requirements.txt" ] && pip install -r "$REPO_DIR/requirements.txt"
+
+# Django işlemleri
+cd "$REPO_DIR"
+python manage.py migrate --noinput
+python manage.py collectstatic --noinput
+
+# Uygulamayı yeniden yükle
+systemctl reload gunicorn_v1 || systemctl restart gunicorn_v1
+
+echo "[OK] Deploy tamamlandı."
+SH
+
+chmod +x /opt/aras_test_v12/deploy.sh
+
+# Kısa yol (isteğe bağlı)
+ln -sf /opt/aras_test_v12/deploy.sh /usr/local/bin/aras_test_v12_update || true
+
+echo "Kullanım: sudo /opt/aras_test_v12/deploy.sh  [opsiyonel-branch]"
+echo "Kısayol: sudo aras_test_v12_update"
+
+# ---------------------------------------- DB RESET + SUPERUSER (opsiyonel: DB_RESET=1) ----------------------------------------
+# Opsiyonel güvenlik: DB_RESET=1 değilse atla
+if [ "${DB_RESET:-0}" != "1" ]; then
+  echo "[SKIP] DB reset atlandı (DB_RESET=1 değil)."
+  exit 0
+fi
+
+set -euo pipefail
+echo "[WARN] Veritabanı SIFIRLANACAK: arasomtest"
+
+# DB kullanıcısı garanti
+sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname = 'postgres'" | grep -q 1           || sudo -u postgres psql -c "CREATE USER postgres WITH PASSWORD 'oms123456';"
+sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'oms123456';"
+
+# Drop + Create
+sudo -u postgres dropdb --if-exists arasomtest
+sudo -u postgres createdb -O postgres arasomtest
+
+# Django migrate + superuser
+cd /opt/aras_test_v12
+source .venv/bin/activate
+python manage.py migrate --noinput
+
+# .env'deki DJANGO_ADMIN_* değerlerini ortam değişkenine taşı ve superuser oluştur
+python - <<'PY'
+import os, django, pathlib
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
+
+env_file = pathlib.Path('/opt/aras_test_v12/.env')
+if env_file.exists():
+    for line in env_file.read_text(encoding='utf-8', errors='ignore').splitlines():
+        s = line.strip()
+        if s and not s.startswith('#') and '=' in s:
+            k, v = s.split('=', 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
+django.setup()
+from django.contrib.auth import get_user_model
+User = get_user_model()
+
+username = os.environ.get('DJANGO_ADMIN_USERNAME', 'admin')
+email    = os.environ.get('DJANGO_ADMIN_EMAIL',    'admin@example.com')
+password = os.environ.get('DJANGO_ADMIN_PASSWORD', 'sifre1234')
+
+u, created = User.objects.get_or_create(
+    username=username,
+    defaults={'email': email}
+)
+u.is_active = True
+u.is_staff = True
+u.is_superuser = True
+u.email = email
+u.set_password(password)
+u.save()
+print(f"[OK] Superuser: {username} (şifre .env veya varsayılan)")
+PY
+
+python manage.py collectstatic --noinput || true
+systemctl reload gunicorn_v1 || systemctl restart gunicorn_v1
+
+echo "[OK] DB reset + superuser tamam."
